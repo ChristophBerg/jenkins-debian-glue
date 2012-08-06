@@ -1,0 +1,71 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use JSON;
+use LWP::Simple;
+
+die "$0 <job name> <job id>" unless (@ARGV == 2);
+my ($job_name, $job_id) = @ARGV;
+
+sub check_build_queue ()
+{
+	my $url = "$ENV{JENKINS_URL}queue/api/json";
+	my $json = get ($url) or die "getting $url failed";
+
+	my $data_queue = decode_json ($json);
+
+	foreach my $item (@{$data_queue->{items}}) {
+		if (grep { $_->{causes} && $_->{causes}->[0]->{shortDescription} =~ /$job_id/o }
+			@{$item->{actions}}) {
+			print "item $item->{id}\n";
+			return $item->{id};
+		}
+	}
+
+	return 0;
+}
+
+sub check_builds ()
+{
+	my $url = "$ENV{JENKINS_URL}job/$job_name/api/json?depth=1";
+	my $json = get ($url) or die "getting $url failed";
+
+	my $data = decode_json ($json);
+
+	if ($data->{queueItem}) {
+		foreach my $action (@{$data->{queueItem}->{actions}}) {
+			next unless ($action->{causes});
+			if (grep { $_->{shortDescription} =~ /$job_id/o }
+				@{$action->{causes}}) {
+				return $data->{queueItem}->{id};
+			}
+		}
+	}
+
+	foreach my $build (@{$data->{builds}}) {
+		#use Data::Dumper; print Dumper ($build);
+		if (grep { $_->{causes} && $_->{causes}->[0]->{shortDescription} =~ /$job_id/o }
+			@{$build->{actions}}) {
+			if (defined $build->{result}) {
+				print "build $build->{number} finished with $build->{result}\n";
+				exit ($build->{result} eq 'SUCCESS' ? 0 : 1);
+			}
+			return $build->{number};
+		}
+	}
+
+	return 0;
+}
+
+while (my $id = check_build_queue) {
+	print "Build is still in queue with id $id\n";
+	sleep 1;
+}
+
+while (my $build_number = check_builds) {
+	print "build number $build_number is still running\n";
+	sleep 1;
+}
+
+die "Build disappeared?";
