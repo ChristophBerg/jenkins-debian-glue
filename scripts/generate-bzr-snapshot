@@ -1,0 +1,132 @@
+#!/bin/bash
+
+set -x
+set -e
+set -u
+
+# BUILD_ID=2012-07-29_20-30-24
+# BUILD_NUMBER=2
+# BUILD_TAG=jenkins-postgresql-common-source-2
+# BUILD_URL=http://localhost:8080/job/postgresql-common-source/2/
+# BZR_REVID=mpitt@debian.org-20120726192957-cig3583av8q0j7n0
+# BZR_REVISION=1189
+# EXECUTOR_NUMBER=1
+# HOME=/var/lib/jenkins
+# HUDSON_COOKIE=15802a6e-3153-4765-ae98-a38d8b1ba30f
+# HUDSON_HOME=/var/lib/jenkins
+# HUDSON_SERVER_COOKIE=cd8d021b242de3c332f61ae63b69aef3
+# HUDSON_URL=http://localhost:8080/
+# JENKINS_HOME=/var/lib/jenkins
+# JENKINS_SERVER_COOKIE=cd8d021b242de3c332f61ae63b69aef3
+# JENKINS_URL=http://localhost:8080/
+# JOB_NAME=postgresql-common-source
+# JOB_URL=http://localhost:8080/job/postgresql-common-source/
+# LD_LIBRARY_PATH=/usr/lib/jvm/java-6-openjdk-amd64/jre/lib/amd64/server:/usr/lib/jvm/java-6-openjdk-amd64/jre/lib/amd64:/usr/lib/jvm/java-6-openjdk-amd64/jre/../lib/amd64
+# LOGNAME=jenkins
+# MAIL=/var/mail/jenkins
+# NODE_LABELS=master
+# NODE_NAME=master
+# PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+# PWD=/var/lib/jenkins/workspace/postgresql-common-source
+# SHELL=/bin/bash
+# SHLVL=1
+# TERM=linux
+# USER=jenkins
+# _=/usr/bin/daemon
+# WORKSPACE=/var/lib/jenkins/workspace/postgresql-common-source
+
+export LC_ALL=C
+export LANG=C
+
+[ -n "${DEBEMAIL:-}" ] || DEBEMAIL="jenkins.grml.org Autobuilder <jenkins@grml.org>"
+export DEBEMAIL
+
+# the Bazaar Plugin doesn't support checkouts in subdirectories yet
+#if [ ! -d source ] ; then
+#  echo "Please run the script in the jenkins workspace." >&2
+#  exit 1
+#fi
+
+if [ -z "${BUILD_NUMBER:-}" ] ; then
+  echo "No BUILD_NUMBER defined, please run it in jenkins." >&2
+  exit 1
+fi
+
+if [ -z "${BZR_REVISION:-}" ] ; then
+  echo "No BZR_REVISION defined, please run it with a bazaar repository." >&2
+  exit 1
+fi
+
+if ! [ -x "$(which bzr)" ] ; then
+  echo "Error: bzr not available, please install subversion." >&2
+  exit 1
+fi
+
+if ! [ -x "$(which dpkg-parsechangelog)" ] ; then
+  echo "Error: dpkg-parsechangelog not available, please install dpkg-dev." >&2
+  exit 1
+fi
+
+JENKINS_DEBIAN_GLUE_VERSION=$(dpkg --list jenkins-debian-glue 2>/dev/null | awk '/^ii/ {print $3}')
+if [ -n "${JENKINS_DEBIAN_GLUE_VERSION:-}" ] ; then
+  echo "*** Running jenkins-debian-glue version $JENKINS_DEBIAN_GLUE_VERSION ***"
+fi
+
+echo "***  source package build phase ***"
+#rm -f ./* || true
+
+ORIG_DIR=$(pwd)
+#cd source/${branch:-}
+
+if ! [ -r debian/changelog ] ; then
+  echo "Error: could not find debian/changelog (not a Debian package or wrong tag/branch?)" >&2
+  exit 1
+fi
+
+#SINCE_REVISION=$(svn info debian/changelog 2>/dev/null | awk '/Last Changed Rev:/ {print $4}')
+#
+#if [ -z "${SINCE_REVISION:-}" ] ; then
+#  echo "Error: could not detect svn revision which modified debian/changelog." >&2
+#  exit 1
+#fi
+
+# package name
+PACKAGE=$(dpkg-parsechangelog --count 1 | awk '/^Source: / {print $2}')
+
+# get newest version number from changelog
+PREVIOUS_VERSION=$(dpkg-parsechangelog --count 1 | awk '/^Version: / {print $2}')
+
+  DISTRIBUTION=$(dpkg-parsechangelog --count 1 | awk '/^Distribution/ {print $2}')
+
+  TIMESTAMP=$(date +%s) # seconds since 1970-01-01 00:00:00 UTC, ensuring version gets always newer...
+
+  if [ "$DISTRIBUTION" = "UNRELEASED" ] ; then
+    # we do NOT raise the version number, if we detect an unreleased version
+    SNAPSHOT_VERSION="${PREVIOUS_VERSION}~${TIMESTAMP}.bzr${BZR_REVISION}.${BUILD_NUMBER}"
+    dch -b --distribution=UNRELEASED --newversion=$SNAPSHOT_VERSION -- \
+      "SNAPSHOT autobuild for unreleased $PREVIOUS_VERSION via jenkins-debian-glue."
+  fi
+
+for dsc in *.dsc ; do
+  test -f $dsc && dcmd rm -f $dsc
+done
+
+TEMP=$(mktemp -d)
+trap "rm -rf $TEMP" 0 2 3 15
+
+(
+  cd $TEMP
+  apt-get source -d $PACKAGE
+  dpkg-source --no-preparation -x *.dsc
+  rm -f *.dsc
+  cd */
+  rm -rf debian/
+  cp -a $WORKSPACE/debian/ .
+  dpkg-buildpackage -nc -d -S
+  cd $TEMP
+  dcmd cp *.dsc $WORKSPACE
+)
+
+ls -al
+
+# vim:foldmethod=marker ts=2 ft=sh ai expandtab sw=2
