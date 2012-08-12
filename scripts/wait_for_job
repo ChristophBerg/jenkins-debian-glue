@@ -5,6 +5,8 @@ use warnings;
 use JSON;
 use LWP::Simple;
 
+my $delay = 5;
+
 die "$0 <job name> <job id>" unless (@ARGV == 2);
 my ($job_name, $job_id) = @ARGV;
 
@@ -60,12 +62,12 @@ sub check_builds ()
 
 while (my $id = check_build_queue) {
 	print "Build is still in queue with id $id\n";
-	sleep 1;
+	sleep $delay;
 }
 
 while (my $build_number = check_builds) {
 	print "build number $build_number is still running\n";
-	sleep 1;
+	sleep $delay;
 }
 
 die "Build disappeared?";
