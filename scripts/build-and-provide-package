@@ -48,7 +48,6 @@ bailout() {
   [ -n "${1:-}" ] && EXIT="${1}" || EXIT=0
   [ -n "${2:-}" ] && echo "$2" >&2
 
-  # only relevant when not using the "ArtifactDeployer Plugin"
   if [ -n "${sources:-}" ] && [ "${sources:-}" != "unset" ] ; then
     echo "*** Removing sources file. ***"
     rm -f "${sources}/"*
@@ -113,7 +112,7 @@ build_info() {
 
 identify_sourcefile() {
   if [ -n "${sources:-}" ]; then
-    echo "*** Variable \$sources set. Consider switching to ArtifactDeployer plugin setup. ***"
+    echo "*** Variable \$sources set, using it for locating source files. ***"
     if [ -z "${distribution:-}" ]; then
         sourcefile=$(echo "${sources}/"*.dsc)
     else
@@ -161,6 +160,25 @@ identify_sourcefile() {
 }
 
 dist_and_arch_settings() {
+  if [ -n "${distribution:-}" ] ; then
+    DIST="-${distribution}"
+  fi
+
+  if [ -z "${architecture:-}" ] || [ "${architecture:-}" = "all" ] ; then
+    echo "*** No architecture set or architecture set to 'all', using system arch for cowbuilder ***"
+    ARCH="$(dpkg-architecture -qDEB_HOST_ARCH)"
+    BASE="/var/cache/pbuilder/base${DIST:-}.cow"
+  else
+    echo "*** Using cowbuilder base for architecture ${architecture} ***"
+    ARCH="${architecture}"
+    BASE="/var/cache/pbuilder/base${DIST:-}-${architecture}.cow"
+  fi
+
+  if [ -n "${PROVIDE_ONLY:-}" ] ; then
+    echo "*** Config variable 'PROVIDE_ONLY' is set, not considering COWBUILDER_DIST ***"
+    return 0
+  fi
+
   if [ -n "${COWBUILDER_DIST:-}" ]; then
     echo "*** COWBUILDER_DIST is set to $COWBUILDER_DIST - using it for base.cow if it does not exist yet. ***"
   else
@@ -175,20 +193,6 @@ dist_and_arch_settings() {
       echo "*** Neither COWBUILDER_DIST nor distribution set - using ${distri_codename} for base.cow if it does not exist yet. ***"
       COWBUILDER_DIST="${distri_codename}"
     fi
-  fi
-
-  if [ -n "${distribution:-}" ] ; then
-    DIST="-${distribution}"
-  fi
-
-  if [ -z "${architecture:-}" ] || [ "${architecture:-}" = "all" ] ; then
-    echo "*** No architecture set or architecture set to 'all', using system arch for cowbuilder ***"
-    ARCH="$(dpkg-architecture -qDEB_HOST_ARCH)"
-    BASE="/var/cache/pbuilder/base${DIST:-}.cow"
-  else
-    echo "*** Using cowbuilder base for architecture ${architecture} ***"
-    ARCH="${architecture}"
-    BASE="/var/cache/pbuilder/base${DIST:-}-${architecture}.cow"
   fi
 }
 
@@ -287,7 +291,7 @@ cowbuilder_run() {
         --basepath $BASE --debbuildopts "${DEBBUILDOPTS:-}"
       [ $? -eq 0 ] || bailout 1 "Error: Failed to build with cowbuilder."
       ;;
-    amd64|all)
+    amd64|all|*)
       sudo cowbuilder --buildresult "$WORKSPACE"/binaries/ \
         --build $sourcefile \
         --basepath $BASE --debbuildopts "${DEBBUILDOPTS:-}"
@@ -305,8 +309,11 @@ remove_packages() {
     return 0
   fi
 
-  echo "*** Removing previous versions from repository ***"
-  for p in $(dcmd "${WORKSPACE}/binaries/"*"${newest_version}_${ARCH}.changes") ; do
+  echo "*** Removing source package version from repository ***"
+  ${SUDO_CMD:-} reprepro -v -A source -b "${REPOSITORY}" --waitforlock 1000 remove "${REPOS}" "${SOURCE_PACKAGE}"
+
+  echo "*** Removing previous binary package versions from repository ***"
+  for p in $(dcmd "${WORKSPACE}/binaries/"*"${newest_version}_${ARCH}.changes" | grep '\.deb$') ; do
     file="$(basename $p)"
     binpackage="${file%%_*}"
     binary_list="${binary_list:-} ${binpackage}"
@@ -345,7 +352,7 @@ remove_missing_binary_packages() {
   esac
 
   for p in $(${SUDO_CMD:-} reprepro -v -b "${REPOSITORY}" --waitforlock 1000 --list-format '${package}\n' listmatched "${REPOS}" '*' | sort -u); do
-    echo "$binary_list" | grep -q "$p" || missing_packages="${missing_packages:-} $p"
+    echo " $binary_list " | grep -q " $p " || missing_packages="${missing_packages:-} $p"
   done
 
   if echo "${missing_packages:-}" | grep -q '.' ; then
