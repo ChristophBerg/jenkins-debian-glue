@@ -108,8 +108,9 @@ for f in source/*.orig.tar.gz ; do
   test -f $f || continue
   ln -v $f ../$(basename $f)
 done
+rm -rf source
 origtargz
-dpkg-buildpackage -nc -d -S
+dpkg-buildpackage -nc -d -sa -S
 mkdir -p source
 dcmd mv ../*.changes source
 rm -f ../*.orig.tar.gz
