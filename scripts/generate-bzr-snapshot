@@ -73,10 +73,6 @@ if [ -n "${JENKINS_DEBIAN_GLUE_VERSION:-}" ] ; then
 fi
 
 echo "***  source package build phase ***"
-#rm -f ./* || true
-
-ORIG_DIR=$(pwd)
-#cd source/${branch:-}
 
 if ! [ -r debian/changelog ] ; then
   echo "Error: could not find debian/changelog (not a Debian package or wrong tag/branch?)" >&2
@@ -107,26 +103,17 @@ PREVIOUS_VERSION=$(dpkg-parsechangelog --count 1 | awk '/^Version: / {print $2}'
       "SNAPSHOT autobuild for unreleased $PREVIOUS_VERSION via jenkins-debian-glue."
   fi
 
-for dsc in *.dsc ; do
-  test -f $dsc && dcmd rm -f $dsc
+
+for f in source/*.orig.tar.gz ; do
+  test -f $f || continue
+  ln -v $f ../$(basename $f)
 done
+origtargz
+dpkg-buildpackage -nc -d -S
+mkdir -p source
+dcmd mv ../*.changes source
+rm -f ../*.orig.tar.gz
 
-TEMP=$(mktemp -d)
-trap "rm -rf $TEMP" 0 2 3 15
-
-(
-  cd $TEMP
-  apt-get source -d $PACKAGE
-  dpkg-source --no-preparation -x *.dsc
-  rm -f *.dsc
-  cd */
-  rm -rf debian/
-  cp -a $WORKSPACE/debian/ .
-  dpkg-buildpackage -nc -d -S
-  cd $TEMP
-  dcmd cp *.dsc $WORKSPACE
-)
-
-ls -al
+ls -al source
 
 # vim:foldmethod=marker ts=2 ft=sh ai expandtab sw=2
