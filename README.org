@@ -79,8 +79,6 @@ NOTE: the "Delete workspace before build starts" option provided by the [[https:
 Then add another build step of "/Execute shell/" as follows:
 
 #+BEGIN_EXAMPLE
-# JENKINS_DEBIAN_GLUE_SOURCE_HEADER
-
 # when using git:
 /usr/bin/generate-git-snapshot
 
@@ -120,11 +118,6 @@ Screenshot for this /Copy artifacts/ configuration:
 In the "/Build/" section add a build step "/Execute shell/" using:
 
 #+BEGIN_EXAMPLE
-# JENKINS_DEBIAN_GLUE_BINARIES_HEADER
-
-REPOS="${JOB_NAME%-binaries*}"
-/usr/bin/generate-reprepro-codename "${REPOS}"
-
 /usr/bin/build-and-provide-package
 #+END_EXAMPLE
 
@@ -202,9 +195,13 @@ Then you should get test reports for your Debian packages based on lintian's out
 
 + /release/: install Debian package in repository name as specified via "$release" instead of the default (being $REPOS), see "/Can I collect multiple Debian packages in one single repository?/" in the FAQ section for further details.
 
-+ /BASE_PATH/: use specified directory as base directory for further actions. Just set it to "${WORKSPACE}" if you don't have a customized "Target directory" in the "Copy artifacts from another project" configuration, otherwise adopt as necessary.
++ /BASE_PATH/: use specified directory as base directory for further actions. Defaults to "${WORKSPACE}" if unset. Adjust it if you e.g. have a customized "Target directory" in the "Copy artifacts from another project" configuration.
 
 + /BUILD_ONLY/: execute the steps building Debian binary package(s) but skip the repository setup/inclusion steps (useful for building the package(s) on slave nodes and including the result on a different node later then)
+
++ /COWBUILDER_BASE/: set path for cowbuilder's base.cow, defaults to //var/cache/pbuilder/base-${COWBUILDER_DIST}-${arch}.cow/ whereas /COWBUILDER_DIST/ depends on its according variable and /arch/ depends on /architecture/ (though doesn't match it if it's set to "all").
+
++ /COWBUILDER_DIST/: distribution that should be used for creating the cowbuilder base.cow. If /distribution/ is set COWBUILDER_DIST defaults to that, otherwise defaults to the currently running distribution and if that can't be determined then falls back to "sid" (being Debian/unstable).
 
 + /PROVIDE_ONLY/: skip the steps building Debian binary package(s) and just run the repository setup/inclusion steps (useful if building the package(s) takes place on slave nodes and the result should by included in repository/repositories on a specific node then)
 
@@ -260,6 +257,8 @@ This allows you to choose the branch name that should be used for building the D
 
 + *lintian-junit-report*: run Debian package checks using lintian and report in JUnit format (and provide a plaintext copy of the output inside file /lintian.txt/).
 
++ *repository_checker*: provides simple access to codename/repository and package listings (without the need to know how to handle reprepro) as well as an option to verify whether Debian source packages match with binary package versions.
+
 
 * FAQ
 
@@ -299,10 +298,6 @@ The build-and-provide-package script does support such distributed builds by usi
 Usage example for the *-binaries job:
 
 #+BEGIN_EXAMPLE
-# JENKINS_DEBIAN_GLUE_BINARIES_HEADER
-REPOS="${JOB_NAME%-binaries*}"
-sudo /usr/bin/generate-reprepro-codename "${REPOS}"
-
 export BUILD_ONLY=true
 export SUDO_CMD=sudo
 /usr/bin/build-and-provide-package
@@ -313,7 +308,6 @@ Create a *-repos job which gets triggered from the *-binaries job. Don't forget 
 Inside the *-repos job you can use something like:
 
 #+BEGIN_EXAMPLE
-# JENKINS_DEBIAN_GLUE_REPOS_HEADER
 mkdir -p binaries
 
 for suffix in gz bz2 xz deb dsc changes ; do
@@ -322,9 +316,6 @@ done
 
 # if building a tagged version then do not include that one in the release-trunk repository
 case "$branch" in tags/*|branches/*) export IGNORE_RELEASE_TRUNK=true;; esac
-
-REPOS="${JOB_NAME%-repos*}"
-sudo /usr/bin/generate-reprepro-codename "${REPOS}"
 
 export SUDO_CMD=sudo
 export BASE_PATH="binaries/"
