@@ -189,9 +189,15 @@ cowbuilder_init() {
 
   if [ ! -d "${COWBUILDER_BASE}" ]; then
     echo "*** Creating cowbuilder base $COWBUILDER_BASE for arch $arch and distribution $COWBUILDER_DIST ***"
+    case $COWBUILDER_DIST in
+      lenny) MIRROR="http://archive.debian.org/debian/" ;;
+      hardy|lucid|precise|quantal) MIRROR="http://de.archive.ubuntu.com/ubuntu/" ;;
+    esac
     sudo cowbuilder --create --basepath "${COWBUILDER_BASE}" --distribution "${COWBUILDER_DIST}" \
+         ${MIRROR+--mirror $MIRROR} \
          --debootstrapopts --arch --debootstrapopts "$arch" \
-         --debootstrapopts --variant=buildd ${pbuildercfg:-}
+         --debootstrapopts --variant=buildd ${pbuildercfg:-} \
+         --hookdir $HOME/pbuilder-hookdir
     [ $? -eq 0 ] || bailout 1 "Error: Failed to create cowbuilder base ${COWBUILDER_BASE}."
   else
     echo "*** Updating cowbuilder cow base ***"
